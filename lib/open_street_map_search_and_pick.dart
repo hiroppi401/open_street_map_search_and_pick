@@ -99,7 +99,7 @@ class _OpenStreetMapSearchAndPickState
 
   Future<dynamic> callAPI(url) async {
     try {
-      client = http.Client();
+      var client = http.Client();
       var response = await client.get(Uri.parse(url));
       // var response = await client.post(Uri.parse(url));
       if (response.statusCode == 200) {
