@@ -1,6 +1,7 @@
 // ignore_for_file: public_member_api_docs, sort_constructors_first
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -96,9 +97,35 @@ class _OpenStreetMapSearchAndPickState
     return position;
   }
 
+  Future<dynamic> callAPI(url) async {
+    try {
+      var response = await client.get(Uri.parse(url));
+      // var response = await client.post(Uri.parse(url));
+      if (response.statusCode == 200) {
+        return response.bodyBytes;
+      } else {
+        // Handle non-200 status codes (e.g., 404, 500)
+        throw Exception('Failed to load data: ${response.statusCode}');
+      }
+    } on SocketException {
+      // Handle network-related errors (e.g., no internet connection)
+      throw Exception(
+          'No internet connection. Please check your network settings.');
+    } on http.ClientException catch (e) {
+      // Handle http client specific errors (e.g., connection refused)
+      throw Exception('HTTP client error: ${e.message}');
+    } catch (e) {
+      // Catch any other unexpected errors
+      throw Exception('An unknown error occurred: $e');
+    } finally {
+      // Ensure the client is closed, regardless of success or failure
+      client.close();
+    }
+  }
+
   void setNameCurrentPos() async {
-    double latitude = _mapController.center.latitude;
-    double longitude = _mapController.center.longitude;
+    double latitude = _mapController.camera.center.latitude;
+    double longitude = _mapController.camera.center.longitude;
     if (kDebugMode) {
       print(latitude);
     }
@@ -108,13 +135,16 @@ class _OpenStreetMapSearchAndPickState
     String url =
         '${widget.baseUri}/reverse?format=json&lat=$latitude&lon=$longitude&zoom=18&addressdetails=1';
 
-    var response = await client.get(Uri.parse(url));
-    // var response = await client.post(Uri.parse(url));
-    var decodedResponse =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<dynamic, dynamic>;
+    try {
+      var mapData = await callAPI(url);
+      var decodedResponse =
+          jsonDecode(utf8.decode(mapData)) as Map<dynamic, dynamic>;
+      _searchController.text =
+          decodedResponse['display_name'] ?? "MOVE TO CURRENT POSITION";
+    } catch (e) {
+      _searchController.text = "MOVE TO CURRENT POSITION";
+    }
 
-    _searchController.text =
-        decodedResponse['display_name'] ?? "MOVE TO CURRENT POSITION";
     setState(() {});
   }
 
@@ -129,13 +159,22 @@ class _OpenStreetMapSearchAndPickState
     String url =
         '${widget.baseUri}/reverse?format=json&lat=$latitude&lon=$longitude&zoom=18&addressdetails=1';
 
-    var response = await client.get(Uri.parse(url));
+    // var response = await client.get(Uri.parse(url));
     // var response = await client.post(Uri.parse(url));
-    var decodedResponse =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<dynamic, dynamic>;
+    // var decodedResponse =
+    //     jsonDecode(utf8.decode(response.bodyBytes)) as Map<dynamic, dynamic>;
 
-    _searchController.text =
-        decodedResponse['display_name'] ?? "MOVE TO CURRENT POSITION";
+    // _searchController.text =
+    //     decodedResponse['display_name'] ?? "MOVE TO CURRENT POSITION";
+    try {
+      var mapData = await callAPI(url);
+      var decodedResponse =
+          jsonDecode(utf8.decode(mapData)) as Map<dynamic, dynamic>;
+      _searchController.text =
+          decodedResponse['display_name'] ?? "MOVE TO CURRENT POSITION";
+    } catch (e) {
+      _searchController.text = "MOVE TO CURRENT POSITION";
+    }
   }
 
   @override
@@ -144,17 +183,25 @@ class _OpenStreetMapSearchAndPickState
 
     _mapController.mapEventStream.listen((event) async {
       if (event is MapEventMoveEnd) {
-        var client = http.Client();
+        // var client = http.Client();
         String url =
             '${widget.baseUri}/reverse?format=json&lat=${event.camera.center.latitude}&lon=${event.camera.center.longitude}&zoom=18&addressdetails=1';
 
-        var response = await client.get(Uri.parse(url));
-        // var response = await client.post(Uri.parse(url));
-        var decodedResponse =
-            jsonDecode(utf8.decode(response.bodyBytes))
-                as Map<dynamic, dynamic>;
+        // var response = await client.get(Uri.parse(url));
+        // // var response = await client.post(Uri.parse(url));
+        // var decodedResponse = jsonDecode(utf8.decode(response.bodyBytes))
+        //     as Map<dynamic, dynamic>;
 
-        _searchController.text = decodedResponse['display_name'];
+        // _searchController.text = decodedResponse['display_name'];
+        try {
+          var mapData = await callAPI(url);
+          var decodedResponse =
+              jsonDecode(utf8.decode(mapData)) as Map<dynamic, dynamic>;
+          _searchController.text =
+              decodedResponse['display_name'] ?? "MOVE TO CURRENT POSITION";
+        } catch (e) {
+          _searchController.text = "MOVE TO CURRENT POSITION";
+        }
         setState(() {});
       }
     });
@@ -199,8 +246,8 @@ class _OpenStreetMapSearchAndPickState
               Positioned.fill(
                 child: FlutterMap(
                   options: MapOptions(
-                    center: mapCentre,
-                    zoom: 15.0,
+                    initialCenter: mapCentre!,
+                    initialZoom: 15.0,
                     maxZoom: 18,
                     minZoom: 6,
                   ),
@@ -248,8 +295,8 @@ class _OpenStreetMapSearchAndPickState
                   backgroundColor: widget.buttonColor,
                   onPressed: () {
                     _mapController.move(
-                      _mapController.center,
-                      _mapController.zoom + 1,
+                      _mapController.camera.center,
+                      _mapController.camera.zoom + 1,
                     );
                   },
                   child: Icon(widget.zoomInIcon, color: widget.buttonTextColor),
@@ -263,8 +310,8 @@ class _OpenStreetMapSearchAndPickState
                   backgroundColor: widget.buttonColor,
                   onPressed: () {
                     _mapController.move(
-                      _mapController.center,
-                      _mapController.zoom - 1,
+                      _mapController.camera.center,
+                      _mapController.camera.zoom - 1,
                     );
                   },
                   child: Icon(
@@ -283,12 +330,12 @@ class _OpenStreetMapSearchAndPickState
                     if (mapCentre != null) {
                       _mapController.move(
                         LatLng(mapCentre.latitude, mapCentre.longitude),
-                        _mapController.zoom,
+                        _mapController.camera.zoom,
                       );
                     } else {
                       _mapController.move(
                         LatLng(50.5, 30.51),
-                        _mapController.zoom,
+                        _mapController.camera.zoom,
                       );
                     }
                     setNameCurrentPos();
@@ -330,37 +377,46 @@ class _OpenStreetMapSearchAndPickState
                               if (kDebugMode) {
                                 print(value);
                               }
-                              var client = http.Client();
+                              // var client = http.Client();
+                              // try {
+                              String url =
+                                  '${widget.baseUri}/search?q=$value&format=json&polygon_geojson=1&addressdetails=1';
+                              if (kDebugMode) {
+                                print(url);
+                              }
+                              // var response = await client.get(Uri.parse(url));
+                              // // var response = await client.post(Uri.parse(url));
+                              // var decodedResponse =
+                              //     jsonDecode(utf8.decode(response.bodyBytes))
+                              //         as List<dynamic>;
+                              // if (kDebugMode) {
+                              //   print(decodedResponse);
+                              // }
+
                               try {
-                                String url =
-                                    '${widget.baseUri}/search?q=$value&format=json&polygon_geojson=1&addressdetails=1';
-                                if (kDebugMode) {
-                                  print(url);
-                                }
-                                var response = await client.get(Uri.parse(url));
-                                // var response = await client.post(Uri.parse(url));
+                                var mapData = await callAPI(url);
                                 var decodedResponse =
-                                    jsonDecode(utf8.decode(response.bodyBytes))
+                                    jsonDecode(utf8.decode(mapData))
                                         as List<dynamic>;
-                                if (kDebugMode) {
-                                  print(decodedResponse);
-                                }
-                                _options =
-                                    decodedResponse
-                                        .map(
-                                          (e) => OSMdata(
-                                            displayname: e['display_name'],
-                                            lat: double.parse(e['lat']),
-                                            lon: double.parse(e['lon']),
-                                          ),
-                                        )
-                                        .toList();
-                                setState(() {});
-                              } finally {
-                                client.close();
+                                _options = decodedResponse
+                                    .map(
+                                      (e) => OSMdata(
+                                        displayname: e['display_name'],
+                                        lat: double.parse(e['lat']),
+                                        lon: double.parse(e['lon']),
+                                      ),
+                                    )
+                                    .toList();
+                              } catch (e) {
+                                debugPrint(e.toString());
                               }
 
                               setState(() {});
+                              // } finally {
+                              //   client.close();
+                              // }
+
+                              // setState(() {});
                             },
                           );
                         },
@@ -431,19 +487,29 @@ class _OpenStreetMapSearchAndPickState
 
   Future<PickedData> pickData() async {
     LatLong center = LatLong(
-      _mapController.center.latitude,
-      _mapController.center.longitude,
+      _mapController.camera.center.latitude,
+      _mapController.camera.center.longitude,
     );
-    var client = http.Client();
+    // var client = http.Client();
     String url =
-        '${widget.baseUri}/reverse?format=json&lat=${_mapController.center.latitude}&lon=${_mapController.center.longitude}&zoom=18&addressdetails=1';
+        '${widget.baseUri}/reverse?format=json&lat=${_mapController.camera.center.latitude}&lon=${_mapController.camera.center.longitude}&zoom=18&addressdetails=1';
 
-    var response = await client.get(Uri.parse(url));
-    // var response = await client.post(Uri.parse(url));
-    var decodedResponse =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<dynamic, dynamic>;
-    String displayName = decodedResponse['display_name'];
-    return PickedData(center, displayName, decodedResponse["address"]);
+    // var response = await client.get(Uri.parse(url));
+    // // var response = await client.post(Uri.parse(url));
+    // var decodedResponse =
+    //     jsonDecode(utf8.decode(response.bodyBytes)) as Map<dynamic, dynamic>;
+    // String displayName = decodedResponse['display_name'];
+    // return PickedData(center, displayName, decodedResponse["address"]);
+    try {
+      var mapData = await callAPI(url);
+      var decodedResponse =
+          jsonDecode(utf8.decode(mapData)) as Map<dynamic, dynamic>;
+      String displayName = decodedResponse['display_name'];
+      return PickedData(center, displayName, decodedResponse["address"]);
+    } catch (e) {
+      debugPrint(e.toString());
+      return PickedData(center, '', {});
+    }
   }
 }
 
